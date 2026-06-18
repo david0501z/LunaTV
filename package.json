@@ -30,7 +30,6 @@
     "@upstash/redis": "^1.25.0",
     "@vidstack/react": "^1.12.13",
     "artplayer": "^5.2.5",
-    "artplayer-plugin-chromecast": "^1.1.0",
     "bs58": "^6.0.0",
     "clsx": "^2.0.0",
     "crypto-js": "^4.2.0",

@@ -3,7 +3,6 @@
 'use client';
 
 import Artplayer from 'artplayer';
-import ArtplayerChromecast from 'artplayer-plugin-chromecast';
 import Hls from 'hls.js';
 import { Heart } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -1321,6 +1320,9 @@ function PlayPageClient() {
         lock: true,
         moreVideoAttr: {
           crossOrigin: 'anonymous',
+          'x-webkit-airplay': 'true',
+          'webkit-airplay': 'true',
+          'disableRemotePlayback': false,
         },
         // HLS 支持配置
         customType: {
@@ -1487,10 +1489,6 @@ function PlayPageClient() {
               handleNextEpisode();
             },
           },
-        ],
-        // Google Cast 投屏
-        plugins: [
-          ArtplayerChromecast({}),
         ],
       });
 
