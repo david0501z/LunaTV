@@ -929,9 +929,6 @@ function LivePageClient() {
           moreVideoAttr: {
             crossOrigin: 'anonymous',
             preload: 'metadata',
-            'x-webkit-airplay': 'true',
-            'webkit-airplay': 'true',
-            'disableRemotePlayback': false,
           },
           type: type,
           customType: customType,
@@ -945,6 +942,14 @@ function LivePageClient() {
         artPlayerRef.current.on('ready', () => {
           setError(null);
           setIsVideoLoading(false);
+
+          // 启用浏览器原生投屏/AirPlay
+          const video = artPlayerRef.current?.video;
+          if (video) {
+            video.setAttribute('x-webkit-airplay', 'true');
+            video.setAttribute('webkit-airplay', 'true');
+            video.disableRemotePlayback = false;
+          }
 
         });
 

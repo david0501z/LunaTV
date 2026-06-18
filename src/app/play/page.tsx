@@ -1320,9 +1320,6 @@ function PlayPageClient() {
         lock: true,
         moreVideoAttr: {
           crossOrigin: 'anonymous',
-          'x-webkit-airplay': 'true',
-          'webkit-airplay': 'true',
-          'disableRemotePlayback': false,
         },
         // HLS 支持配置
         customType: {
@@ -1495,6 +1492,14 @@ function PlayPageClient() {
       // 监听播放器事件
       artPlayerRef.current.on('ready', () => {
         setError(null);
+
+        // 启用浏览器原生投屏/AirPlay
+        const video = artPlayerRef.current?.video;
+        if (video) {
+          video.setAttribute('x-webkit-airplay', 'true');
+          video.setAttribute('webkit-airplay', 'true');
+          video.disableRemotePlayback = false;
+        }
 
         // 播放器就绪后，如果正在播放则请求 Wake Lock
         if (artPlayerRef.current && !artPlayerRef.current.paused) {
