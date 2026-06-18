@@ -939,7 +939,7 @@ function LivePageClient() {
           },
           // Google Cast 投屏
           plugins: [
-            ArtplayerChromecast(),
+            ArtplayerChromecast({}),
           ],
         });
 
