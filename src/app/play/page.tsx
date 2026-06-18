@@ -1490,9 +1490,7 @@ function PlayPageClient() {
         ],
         // Google Cast 投屏
         plugins: [
-          ArtplayerChromecast({
-            receiver: 'CC1AD845',
-          }),
+          ArtplayerChromecast(),
         ],
       });
 
