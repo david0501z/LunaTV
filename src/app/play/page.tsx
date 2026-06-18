@@ -3,6 +3,7 @@
 'use client';
 
 import Artplayer from 'artplayer';
+import ArtplayerChromecast from 'artplayer-plugin-chromecast';
 import Hls from 'hls.js';
 import { Heart } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -1486,6 +1487,12 @@ function PlayPageClient() {
               handleNextEpisode();
             },
           },
+        ],
+        // Google Cast 投屏
+        plugins: [
+          ArtplayerChromecast({
+            receiver: 'CC1AD845',
+          }),
         ],
       });
 
