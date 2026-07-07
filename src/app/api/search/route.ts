@@ -36,18 +36,25 @@ export async function GET(request: NextRequest) {
   const config = await getConfig();
   const apiSites = await getAvailableApiSites(authInfo.username);
 
+  // 获取当前请求的 cookie（用于转发给需要鉴权的内部 API）
+  const cookieHeader = request.headers.get('cookie') || '';
+
   // 添加超时控制和错误处理，避免慢接口拖累整体响应
-  const searchPromises = apiSites.map((site) =>
-    Promise.race([
-      searchFromApi(site, query),
+  const searchPromises = apiSites.map((site) => {
+    // drpyS 源需要转发 auth cookie（走内部 API 路由）
+    const extraHeaders: Record<string, string> = site.key.startsWith('drpys-')
+      ? { Cookie: cookieHeader }
+      : {};
+    return Promise.race([
+      searchFromApi(site, query, extraHeaders),
       new Promise((_, reject) =>
         setTimeout(() => reject(new Error(`${site.name} timeout`)), 20000)
       ),
     ]).catch((err) => {
       console.warn(`搜索失败 ${site.name}:`, err.message);
       return []; // 返回空数组而不是抛出错误
-    })
-  );
+    });
+  });
 
   try {
     const results = await Promise.allSettled(searchPromises);

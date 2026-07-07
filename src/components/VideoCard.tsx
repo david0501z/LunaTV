@@ -229,7 +229,8 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
       router.push(url);
     } else if (from === 'douban' || (isAggregate && !actualSource && !actualId)) {
       const url = `/play?title=${encodeURIComponent(actualTitle.trim())}${actualYear ? `&year=${actualYear}` : ''
-        }${actualSearchType ? `&stype=${actualSearchType}` : ''}${isAggregate ? '&prefer=true' : ''}${actualQuery ? `&stitle=${encodeURIComponent(actualQuery.trim())}` : ''}`;
+        }${actualSearchType ? `&stype=${actualSearchType}` : ''}${isAggregate ? '&prefer=true' : ''
+        }&stitle=${encodeURIComponent(actualTitle.trim())}`;
       router.push(url);
     } else if (actualSource && actualId) {
       const url = `/play?source=${actualSource}&id=${actualId}&title=${encodeURIComponent(

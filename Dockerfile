@@ -1,8 +1,8 @@
 # ---- 第 1 阶段：安装依赖 ----
 FROM node:20-alpine AS deps
 
-# 启用 corepack 并激活 pnpm（Node20 默认提供 corepack）
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# 启用 corepack 并激活 pnpm（使用 package.json 中指定的版本）
+RUN corepack enable && corepack prepare pnpm@10.14.0 --activate
 
 WORKDIR /app
 
@@ -14,7 +14,7 @@ RUN pnpm install --frozen-lockfile
 
 # ---- 第 2 阶段：构建项目 ----
 FROM node:20-alpine AS builder
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@10.14.0 --activate
 WORKDIR /app
 
 # 复制依赖

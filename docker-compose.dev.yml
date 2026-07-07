@@ -19,7 +19,7 @@ services:
       dockerfile: Dockerfile
     container_name: lunatv-app
     ports:
-      - '3000:3000'
+      - '8091:3000'
     depends_on:
       redis:
         condition: service_healthy

@@ -71,8 +71,8 @@ export async function GET(request: NextRequest) {
       // 为每个源创建验证 Promise
       const validationPromises = apiSites.map(async (site) => {
         try {
-          // 构建搜索URL，只获取第一页
-          const searchUrl = `${site.api}?ac=videolist&wd=${encodeURIComponent(searchKeyword)}`;
+          // 构建搜索URL，只获取第一页（兼容 base 已含 query 参数）
+          const searchUrl = `${site.api}${site.api.includes('?') ? '&' : '?'}ac=videolist&wd=${encodeURIComponent(searchKeyword)}`;
 
           // 设置超时控制
           const controller = new AbortController();

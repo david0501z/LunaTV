@@ -101,6 +101,8 @@ function PlayPageClient() {
   const [videoYear, setVideoYear] = useState(searchParams.get('year') || '');
   const [videoCover, setVideoCover] = useState('');
   const [videoDoubanId, setVideoDoubanId] = useState(0);
+  // 视频分辨率
+  const [videoResolution, setVideoResolution] = useState('');
   // 当前源和ID
   const [currentSource, setCurrentSource] = useState(
     searchParams.get('source') || ''
@@ -128,6 +130,8 @@ function PlayPageClient() {
   const videoYearRef = useRef(videoYear);
   const detailRef = useRef<SearchResult | null>(detail);
   const currentEpisodeIndexRef = useRef(currentEpisodeIndex);
+  const availableSourcesRef = useRef<SearchResult[]>([]);
+  const videoResolutionRef = useRef('');
 
   // 同步最新值到 refs
   useEffect(() => {
@@ -137,14 +141,8 @@ function PlayPageClient() {
     currentEpisodeIndexRef.current = currentEpisodeIndex;
     videoTitleRef.current = videoTitle;
     videoYearRef.current = videoYear;
-  }, [
-    currentSource,
-    currentId,
-    detail,
-    currentEpisodeIndex,
-    videoTitle,
-    videoYear,
-  ]);
+    videoResolutionRef.current = videoResolution;
+  }, [currentSource, currentId, detail, currentEpisodeIndex, videoTitle, videoYear, videoResolution]);
 
   // 视频播放地址
   const [videoUrl, setVideoUrl] = useState('');
@@ -195,6 +193,9 @@ function PlayPageClient() {
   const [videoLoadingStage, setVideoLoadingStage] = useState<
     'initing' | 'sourceChanging'
   >('initing');
+  // 上次播放失败的原因
+  const [lastFailReason, setLastFailReason] = useState<string>('');
+  // 自动换源状态
 
   // 播放进度保存相关
   const saveIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -202,6 +203,7 @@ function PlayPageClient() {
 
   const artPlayerRef = useRef<any>(null);
   const artRef = useRef<HTMLDivElement | null>(null);
+  const infoOverlayRef = useRef<HTMLDivElement | null>(null);
 
   // Wake Lock 相关
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
@@ -493,19 +495,85 @@ function PlayPageClient() {
     }
   };
 
-  // 去广告相关函数
+  // 去广告相关函数 — 智能检测 HLS 广告标记并移除广告段
+  // 支持的广告标记:
+  //   #EXT-X-CUE-OUT / #EXT-X-CUE-IN (Google DAI SCTE-35)
+  //   #EXT-X-CUE (传统 SCTE-35)
+  //   #EXT-X-DATERANGE CLASS="com.apple.itunes.metadat" (Apple HLS)
+  //   #EXT-OATCLS-SCTE35 (OATV/Verizon SCTE-35)
   function filterAdsFromM3U8(m3u8Content: string): string {
     if (!m3u8Content) return '';
 
-    // 按行分割M3U8内容
     const lines = m3u8Content.split('\n');
-    const filteredLines = [];
+    const filteredLines: string[] = [];
+    let inAd = false;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+      const trimmed = line.trim();
 
-      // 只过滤#EXT-X-DISCONTINUITY标识
-      if (!line.includes('#EXT-X-DISCONTINUITY')) {
+      // --- 广告开始标记检测 ---
+
+      // #EXT-X-CUE-OUT[:duration] — Google DAI / 标准 SCTE-35 广告开始
+      if (
+        trimmed.startsWith('#EXT-X-CUE-OUT') ||
+        trimmed.startsWith('#EXT-OATCLS-SCTE35') ||
+        (trimmed.startsWith('#EXT-X-CUE:') && !trimmed.includes('CUE-IN') && !trimmed.includes('CUE-OUT'))
+      ) {
+        inAd = true;
+        continue;
+      }
+
+      // 单独的 #EXT-X-CUE（不含 : 和参数）也可以表示广告开始
+      if (trimmed === '#EXT-X-CUE') {
+        inAd = true;
+        continue;
+      }
+
+      // #EXT-X-DATERANGE 且包含广告相关 CLASS 属性
+      if (trimmed.startsWith('#EXT-X-DATERANGE:')) {
+        const clsMatch = trimmed.match(/CLASS="([^"]+)"/i);
+        if (clsMatch) {
+          const cls = clsMatch[1].toLowerCase();
+          if (
+            cls.includes('ad') ||
+            cls.includes('advert') ||
+            cls.includes('commercial') ||
+            cls === 'com.apple.itunes.metadat' ||
+            cls.includes('scte35')
+          ) {
+            inAd = true;
+            continue;
+          }
+        }
+      }
+
+      // --- 广告结束标记检测 ---
+      if (trimmed.startsWith('#EXT-X-CUE-IN') || trimmed.startsWith('#EXT-X-CUE:END')) {
+        inAd = false;
+        continue;
+      }
+
+      // --- 广告中：跳过所有媒体段 ---
+      if (inAd) {
+        // 跳过 EXTINF（段描述）和裸 URL/路径（段文件）
+        const isSegmentFile = trimmed &&
+          !trimmed.startsWith('#') &&
+          (trimmed.endsWith('.ts') ||
+           trimmed.endsWith('.aac') ||
+           trimmed.endsWith('.mp4') ||
+           trimmed.endsWith('.m4s') ||
+           trimmed.endsWith('.webm') ||
+           trimmed.includes('.ts?'));  // 带查询参数的 TS
+
+        if (trimmed.startsWith('#EXTINF') || isSegmentFile) {
+          continue;
+        }
+        // 广告中的其他标签（如 DISCONTINUITY）等保留，避免破坏播放列表结构
+      }
+
+      // 不在广告中：保留除 DISCONTINUITY 外的所有内容
+      if (!trimmed.includes('#EXT-X-DISCONTINUITY')) {
         filteredLines.push(line);
       }
     }
@@ -615,6 +683,50 @@ function PlayPageClient() {
     }
   };
 
+  // ---- 左上角信息浮层辅助函数 ----
+
+  /** 构建浮层文本 */
+  function buildOverlayText(sourceName: string): string {
+    const parts: string[] = [];
+    if (sourceName) parts.push(`📁 ${sourceName}`);
+    const res = videoResolutionRef.current;
+    if (res) parts.push(`📺 ${res}`);
+    return parts.join(' · ') || '';
+  }
+
+  /** 创建/更新左上角信息浮层（注入到 ArtPlayer DOM 内，全屏也保留） */
+  function updateInfoOverlay(sourceName?: string) {
+    const name = sourceName ?? detailRef.current?.source_name ?? '';
+    const text = buildOverlayText(name);
+    if (!text) return;
+    try {
+      // 延迟执行，确保 player 已就绪
+      setTimeout(() => {
+        const art = artPlayerRef.current;
+        if (!art?.template?.$container) return;
+        const container = art.template.$container as HTMLDivElement;
+        // 查找已有浮层，没有则创建
+        let el = container.querySelector('.hermes-info-overlay') as HTMLDivElement | null;
+        if (!el) {
+          el = document.createElement('div');
+          el.className = 'hermes-info-overlay';
+          el.style.cssText =
+            'position:absolute;top:8px;left:8px;z-index:30;' +
+            'font-size:12px;background:rgba(0,0,0,0.6);' +
+            'backdrop-filter:blur(4px);padding:4px 8px;' +
+            'border-radius:4px;color:#4ade80;font-family:sans-serif;' +
+            'border:1px solid rgba(74,222,128,0.4);line-height:1.4;' +
+            'pointer-events:none;white-space:nowrap;';
+          container.appendChild(el);
+          infoOverlayRef.current = el;
+        }
+        el.textContent = text;
+      }, 100);
+    } catch {
+      // 忽略
+    }
+  }
+
   class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
     constructor(config: any) {
       super(config);
@@ -663,9 +775,16 @@ function PlayPageClient() {
         if (!detailResponse.ok) {
           throw new Error('获取视频详情失败');
         }
-        const detailData = (await detailResponse.json()) as SearchResult;
-        setAvailableSources([detailData]);
-        return [detailData];
+        const detailData = await detailResponse.json() as any;
+        // drpys 多源格式: { list: [SearchResult, ...] }
+        if (detailData && Array.isArray(detailData.list) && detailData.list.length > 0) {
+          const sources = detailData.list as SearchResult[];
+          setAvailableSources(sources);
+          return sources;
+        }
+        // 标准格式: 单个 SearchResult 对象
+        setAvailableSources([detailData as SearchResult]);
+        return [detailData as SearchResult];
       } catch (err) {
         console.error('获取视频详情失败:', err);
         return [];
@@ -684,18 +803,33 @@ function PlayPageClient() {
         }
         const data = await response.json();
 
-        // 处理搜索结果，根据规则过滤
+        // 处理搜索结果，根据规则过滤（宽松匹配，兼容豆瓣/搜索标题格式差异）
+        const normalizedQuery = videoTitleRef.current
+          .replaceAll(' ', '')
+          .replace(/[：:（）()\-—–·,，．。！？、]/g, '')
+          .toLowerCase();
         const results = data.results.filter(
-          (result: SearchResult) =>
-            result.title.replaceAll(' ', '').toLowerCase() ===
-            videoTitleRef.current.replaceAll(' ', '').toLowerCase() &&
-            (videoYearRef.current
-              ? result.year.toLowerCase() === videoYearRef.current.toLowerCase()
-              : true) &&
-            (searchType
-              ? (searchType === 'tv' && result.episodes.length > 1) ||
-              (searchType === 'movie' && result.episodes.length === 1)
-              : true)
+          (result: SearchResult) => {
+            const normalizedTitle = result.title
+              .replaceAll(' ', '')
+              .replace(/[：:（）()\-—–·,，．。！？、]/g, '')
+              .toLowerCase();
+            // 标题包含匹配：查询词包含在结果标题中，或结果标题包含在查询词中
+            const titleMatch =
+              normalizedTitle.includes(normalizedQuery) ||
+              normalizedQuery.includes(normalizedTitle);
+            if (!titleMatch) return false;
+            // 年份：宽松匹配（查询年份是结果年份的一部分即可）
+            if (videoYearRef.current) {
+              const yearMatch =
+                result.year.includes(videoYearRef.current) ||
+                videoYearRef.current.includes(result.year);
+              if (!yearMatch) return false;
+            }
+            // 集数：只要结果有至少 1 集即可（详情 API 会返回完整数据）
+            if (result.episodes.length === 0) return false;
+            return true;
+          }
         );
         setAvailableSources(results);
         return results;
@@ -722,15 +856,24 @@ function PlayPageClient() {
           : '🔍 正在搜索播放源...'
       );
 
-      let sourcesInfo = await fetchSourcesData(searchTitle || videoTitle);
-      if (
-        currentSource &&
-        currentId &&
-        !sourcesInfo.some(
+      let sourcesInfo: SearchResult[] = [];
+      if (currentSource && currentId) {
+        // 有指定源时，先尝试搜索（搜索结果的 vod_play_url 通常已包含剧集数据）
+        // 只有搜索没找到匹配的源+id时，才用详情 API 兜底
+        sourcesInfo = await fetchSourcesData(searchTitle || videoTitle);
+        const foundInSearch = sourcesInfo.some(
           (source) => source.source === currentSource && source.id === currentId
-        )
-      ) {
-        sourcesInfo = await fetchSourceDetail(currentSource, currentId);
+        );
+        if (!foundInSearch) {
+          // 搜索结果中没有匹配的源，尝试详情 API 获取完整数据
+          const detailSources = await fetchSourceDetail(currentSource, currentId);
+          if (detailSources.length > 0) {
+            sourcesInfo = detailSources;
+          }
+        }
+      } else {
+        // 无指定源时，通过搜索查找
+        sourcesInfo = await fetchSourcesData(searchTitle || videoTitle);
       }
       if (sourcesInfo.length === 0) {
         setError('未找到匹配结果');
@@ -930,6 +1073,9 @@ function PlayPageClient() {
       setCurrentSource(newSource);
       setCurrentId(newId);
       setDetail(newDetail);
+      // 更新左上角水印显示新源名称，清除旧分辨率
+      setVideoResolution('');
+      updateInfoOverlay(newDetail.source_name);
       setCurrentEpisodeIndex(targetIndex);
     } catch (err) {
       // 隐藏换源加载状态
@@ -1492,6 +1638,17 @@ function PlayPageClient() {
       // 监听播放器事件
       artPlayerRef.current.on('ready', () => {
         setError(null);
+        setLastFailReason('');
+        // 在播放器 DOM 内创建左上角信息浮层（全屏也保留）
+        updateInfoOverlay();
+
+        // 启用浏览器原生投屏/AirPlay
+        const video = artPlayerRef.current?.video;
+        if (video) {
+          video.setAttribute('x-webkit-airplay', 'true');
+          video.setAttribute('webkit-airplay', 'true');
+          video.disableRemotePlayback = false;
+        }
 
         // 播放器就绪后，如果正在播放则请求 Wake Lock
         if (artPlayerRef.current && !artPlayerRef.current.paused) {
@@ -1523,6 +1680,21 @@ function PlayPageClient() {
       });
       artPlayerRef.current.on('video:ratechange', () => {
         lastPlaybackRateRef.current = artPlayerRef.current.playbackRate;
+      });
+
+      // 监听视频元数据加载完成，获取实际分辨率
+      artPlayerRef.current.on('video:loadedmetadata', () => {
+        try {
+          const video = artPlayerRef.current?.video;
+          if (video && video.videoWidth > 0 && video.videoHeight > 0) {
+            const res = `${video.videoWidth}×${video.videoHeight}`;
+            setVideoResolution(res);
+            // 更新水印显示分辨率
+            updateInfoOverlay();
+          }
+        } catch {
+          // 忽略
+        }
       });
 
       // 监听视频可播放事件，这时恢复播放进度更可靠
@@ -1610,9 +1782,71 @@ function PlayPageClient() {
 
       artPlayerRef.current.on('error', (err: any) => {
         console.error('播放器错误:', err);
+        // 提取可读的错误原因
+        let failReason = '未知错误';
+        if (err?.message) {
+          failReason = err.message;
+        } else {
+          const video = artPlayerRef.current?.video;
+          const mediaError = video?.error;
+          if (mediaError) {
+            switch (mediaError.code) {
+              case MediaError.MEDIA_ERR_ABORTED:
+                failReason = '播放被中断';
+                break;
+              case MediaError.MEDIA_ERR_NETWORK:
+                failReason = '网络错误，地址可能已失效';
+                break;
+              case MediaError.MEDIA_ERR_DECODE:
+                failReason = '解码失败（格式不支持或文件损坏）';
+                break;
+              case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
+                failReason = '视频格式不支持';
+                break;
+              default:
+                failReason = `播放错误 (${mediaError.code})`;
+            }
+            if (mediaError.message) failReason += `: ${mediaError.message}`;
+          } else if (err?.type) {
+            failReason = `${err.type}`;
+          }
+        }
+
+        // 播放开始后出错，可能是网络波动，不自动换源
         if (artPlayerRef.current.currentTime > 0) {
+          try {
+            artPlayerRef.current.notice.show = `⚠️ ${failReason}`;
+          } catch {
+            // 忽略通知显示错误
+          }
           return;
         }
+
+        // 播放失败且currentTime=0 → 自动尝试下一个可用源
+        const current = detailRef.current;
+        const allSources = availableSourcesRef.current;
+        const sourceName = current?.source_name || '当前源';
+
+        if (current && allSources.length > 1) {
+          const currentIdx = allSources.findIndex(
+            (s: SearchResult) =>
+              s.source === current.source && s.id === current.id
+          );
+          if (currentIdx >= 0 && currentIdx < allSources.length - 1) {
+            const nextSrc = allSources[currentIdx + 1];
+            console.log(
+              `自动换源: ${current.source_name} → ${nextSrc.source_name}`
+            );
+            // 记录失败原因并显示在换源蒙层上
+            setLastFailReason(`❌ ${sourceName}：${failReason}`);
+            handleSourceChange(nextSrc.source, nextSrc.id, nextSrc.title);
+            return;
+          }
+        }
+
+        // 没有更多源可换
+        setLastFailReason('');
+        setError(`播放失败（${sourceName}）：${failReason}，请尝试其他源或刷新页面`);
       });
 
       // 监听视频播放结束事件，自动播放下一集
@@ -1830,8 +2064,8 @@ function PlayPageClient() {
   return (
     <PageLayout activePath='/play'>
       <div className='flex flex-col gap-3 py-4 px-5 lg:px-[3rem] 2xl:px-20'>
-        {/* 第一行：影片标题 */}
-        <div className='py-1'>
+        {/* 第一行：影片标题 + 源名称 */}
+        <div className='py-1 flex items-center gap-3 flex-wrap'>
           <h1 className='text-xl font-semibold text-gray-900 dark:text-gray-100'>
             {videoTitle || '影片标题'}
             {totalEpisodes > 1 && (
@@ -1840,6 +2074,11 @@ function PlayPageClient() {
               </span>
             )}
           </h1>
+          {detail?.source_name && (
+            <span className='text-xs px-2 py-1 border border-green-500/60 text-green-600 dark:text-green-400 rounded font-medium flex-shrink-0'>
+              📁 {detail.source_name}
+            </span>
+          )}
         </div>
         {/* 第二行：播放器和选集 */}
         <div className='space-y-2'>
@@ -1899,6 +2138,15 @@ function PlayPageClient() {
                   className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
                 ></div>
 
+                {/* 源名称浮层 */}
+                {detail?.source_name && !isVideoLoading && (
+                  <div className='absolute top-2 left-2 z-[450]'>
+                    <span className='px-2 py-1 text-xs font-semibold bg-black/60 backdrop-blur-sm text-green-400 border border-green-500/40 rounded-md shadow-lg'>
+                      📁 {detail.source_name}
+                    </span>
+                  </div>
+                )}
+
                 {/* 换源加载蒙层 */}
                 {isVideoLoading && (
                   <div className='absolute inset-0 bg-black/85 backdrop-blur-sm rounded-xl flex items-center justify-center z-[500] transition-all duration-300'>
@@ -1926,10 +2174,17 @@ function PlayPageClient() {
                       </div>
 
                       {/* 换源消息 */}
-                      <div className='space-y-2'>
+                      <div className='space-y-3'>
+                        {lastFailReason && videoLoadingStage === 'sourceChanging' && (
+                          <div className='px-3 py-2 bg-red-500/20 border border-red-500/30 rounded-lg'>
+                            <p className='text-sm text-red-300 font-medium break-all'>
+                              {lastFailReason}
+                            </p>
+                          </div>
+                        )}
                         <p className='text-xl font-semibold text-white animate-pulse'>
                           {videoLoadingStage === 'sourceChanging'
-                            ? '🔄 切换播放源...'
+                            ? '🔄 正在自动切换源...'
                             : '🔄 视频加载中...'}
                         </p>
                       </div>
