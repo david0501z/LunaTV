@@ -518,34 +518,52 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
             !sourceSearchError &&
             availableSources.length > 0 && (
               <div className='flex-1 overflow-y-auto space-y-2 pb-20'>
-                {availableSources
-                  .sort((a, b) => {
-                    const aIsCurrent =
-                      a.source?.toString() === currentSource?.toString() &&
-                      a.id?.toString() === currentId?.toString();
-                    const bIsCurrent =
-                      b.source?.toString() === currentSource?.toString() &&
-                      b.id?.toString() === currentId?.toString();
-                    if (aIsCurrent && !bIsCurrent) return -1;
-                    if (!aIsCurrent && bIsCurrent) return 1;
-                    return 0;
-                  })
-                  .map((source, index) => {
-                    const isCurrentSource =
-                      source.source?.toString() === currentSource?.toString() &&
-                      source.id?.toString() === currentId?.toString();
-                    return (
-                      <div
-                        key={`${source.source}-${source.id}`}
-                        onClick={() =>
-                          !isCurrentSource && handleSourceClick(source)
-                        }
-                        className={`flex items-start gap-3 px-2 py-3 rounded-lg transition-all select-none duration-200 relative
+                {(() => {
+                  const sourceScore = (source: SearchResult): number => {
+                    const sourceKey = `${source.source}-${source.id}`;
+                    const vi = videoInfoMap.get(sourceKey);
+                    if (!vi || vi.hasError || vi.quality === '未知') return -1;
+                    const qScore = (() => {
+                      switch (vi.quality) {
+                        case '4K': return 100;
+                        case '2K': return 85;
+                        case '1080p': return 75;
+                        case '720p': return 60;
+                        case '480p': return 40;
+                        case 'SD': return 20;
+                        default: return 30;
+                      }
+                    })();
+                    const speedMatch = vi.loadSpeed.match(/^([\d.]+)\s*(KB\/s|MB\/s)$/);
+                    let speedKBps = 0;
+                    if (speedMatch) {
+                      const unit = speedMatch[2];
+                      speedKBps = unit === 'MB/s' ? parseFloat(speedMatch[1]) * 1024 : parseFloat(speedMatch[1]);
+                    }
+                    return qScore * 0.6 + Math.min(speedKBps / 5120, 0.4);
+                  };
+                  return availableSources
+                    .map(source => ({ source, score: sourceScore(source) }))
+                    .sort((a, b) => {
+                      const aIsCurrent = a.source.source?.toString() === currentSource?.toString() && a.source.id?.toString() === currentId?.toString();
+                      const bIsCurrent = b.source.source?.toString() === currentSource?.toString() && b.source.id?.toString() === currentId?.toString();
+                      if (aIsCurrent && !bIsCurrent) return -1;
+                      if (!aIsCurrent && bIsCurrent) return 1;
+                      return b.score - a.score;
+                    })
+                    .map(({ source, score }) => {
+                      const isCurrentSource = source.source?.toString() === currentSource?.toString() && source.id?.toString() === currentId?.toString();
+                      return (
+                        <div
+                          key={`${source.source}-${source.id}`}
+                          onClick={() =>
+                            !isCurrentSource && handleSourceClick(source)
+                          }
+                          className={`flex items-start gap-3 px-2 py-3 rounded-lg transition-all select-none duration-200 relative
                       ${isCurrentSource
                             ? 'bg-green-500/10 dark:bg-green-500/20 border-green-500/30 border'
                             : 'hover:bg-gray-200/50 dark:hover:bg-white/10 hover:scale-[1.02] cursor-pointer'
-                          }`.trim()}
-                      >
+                          }`.trim()}>
                         {/* 封面 */}
                         <div className='flex-shrink-0 w-12 h-20 bg-gray-300 dark:bg-gray-600 rounded overflow-hidden'>
                           {source.episodes && source.episodes.length > 0 && (
