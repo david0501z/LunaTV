@@ -4,6 +4,7 @@
 
 import Artplayer from 'artplayer';
 import Hls from 'hls.js';
+import artplayerPluginChromecast from 'artplayer-plugin-chromecast';
 import { Heart } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
@@ -1822,7 +1823,7 @@ function PlayPageClient() {
           return;
         }
 
-        // 播放失败且currentTime=0 → 自动尝试下一个可用源
+        // 播放失败且 currentTime=0 → 自动尝试下一个可用源
         const current = detailRef.current;
         const allSources = availableSourcesRef.current;
         const sourceName = current?.source_name || '当前源';
@@ -1837,16 +1838,14 @@ function PlayPageClient() {
             console.log(
               `自动换源: ${current.source_name} → ${nextSrc.source_name}`
             );
-            // 记录失败原因并显示在换源蒙层上
             setLastFailReason(`❌ ${sourceName}：${failReason}`);
             handleSourceChange(nextSrc.source, nextSrc.id, nextSrc.title);
             return;
           }
         }
 
-        // 没有更多源可换
-        setLastFailReason('');
-        setError(`播放失败（${sourceName}）：${failReason}，请尝试其他源或刷新页面`);
+        // 没有更多源可换 — 显示错误提示但保留换源面板（不跳转页面）
+        setLastFailReason(`❌ ${sourceName}：${failReason}`);
       });
 
       // 监听视频播放结束事件，自动播放下一集
