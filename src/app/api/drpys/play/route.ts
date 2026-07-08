@@ -6,7 +6,7 @@ export const runtime = 'nodejs';
 
 const DRPYS_BASE = process.env.DRPYS_BASE_URL || 'http://172.17.0.1:5757';
 // drpyS 密码优先读取环境变量 DRPYS_PWD，yml 中可单独配置
-const DRPYS_PWD = process.env.DRPYS_PWD || 'admin123';
+const DRPYS_PWD = process.env.DRPYS_PWD || 'user0501';
 
 const DRPYS_MODULES: Record<string, string> = {
   'drpys-wangpan': '网盘资源[搜]',

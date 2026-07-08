@@ -518,52 +518,53 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
             !sourceSearchError &&
             availableSources.length > 0 && (
               <div className='flex-1 overflow-y-auto space-y-2 pb-20'>
-                {(() => {
-                  const sourceScore = (source: SearchResult): number => {
-                    const sourceKey = `${source.source}-${source.id}`;
-                    const vi = videoInfoMap.get(sourceKey);
-                    if (!vi || vi.hasError || vi.quality === '未知') return -1;
-                    const qScore = (() => {
-                      switch (vi.quality) {
-                        case '4K': return 100;
-                        case '2K': return 85;
-                        case '1080p': return 75;
-                        case '720p': return 60;
-                        case '480p': return 40;
-                        case 'SD': return 20;
-                        default: return 30;
-                      }
-                    })();
-                    const speedMatch = vi.loadSpeed.match(/^([\d.]+)\s*(KB\/s|MB\/s)$/);
-                    let speedKBps = 0;
-                    if (speedMatch) {
-                      const unit = speedMatch[2];
-                      speedKBps = unit === 'MB/s' ? parseFloat(speedMatch[1]) * 1024 : parseFloat(speedMatch[1]);
-                    }
-                    return qScore * 0.6 + Math.min(speedKBps / 5120, 0.4);
-                  };
-                  return availableSources
-                    .map(source => ({ source, score: sourceScore(source) }))
-                    .sort((a, b) => {
-                      const aIsCurrent = a.source.source?.toString() === currentSource?.toString() && a.source.id?.toString() === currentId?.toString();
-                      const bIsCurrent = b.source.source?.toString() === currentSource?.toString() && b.source.id?.toString() === currentId?.toString();
-                      if (aIsCurrent && !bIsCurrent) return -1;
-                      if (!aIsCurrent && bIsCurrent) return 1;
-                      return b.score - a.score;
-                    })
-                    .map(({ source, score }, idx) => {
-                      const isCurrentSource = source.source?.toString() === currentSource?.toString() && source.id?.toString() === currentId?.toString();
-                      return (
-                        <div
-                          key={`${source.source}-${source.id}`}
-                          onClick={() =>
-                            !isCurrentSource && handleSourceClick(source)
-                          }
-                          className={`flex items-start gap-3 px-2 py-3 rounded-lg transition-all select-none duration-200 relative
+                {availableSources
+                  .map((s) => ({
+                    s,
+                    score: (() => {
+                      const key = `${s.source}-${s.id}`;
+                      const vi = videoInfoMap.get(key);
+                      if (!vi || vi.hasError || vi.quality === '未知') return -1;
+                      const q = (function () {
+                        switch (vi.quality) {
+                          case '4K': return 100;
+                          case '2K': return 85;
+                          case '1080p': return 75;
+                          case '720p': return 60;
+                          case '480p': return 40;
+                          case 'SD': return 20;
+                          default: return 30;
+                        }
+                      })();
+                      const m = vi.loadSpeed.match(/^([\d.]+)\s*(KB\/s|MB\/s)$/);
+                      let speed = 0;
+                      if (m) speed = m[2] === 'MB/s' ? parseFloat(m[1]) * 1024 : parseFloat(m[1]);
+                      return q * 0.6 + Math.min(speed / 5120, 0.4);
+                    })()
+                  }))
+                  .sort((a, b) => {
+                    const aCur = a.s.source?.toString() === currentSource?.toString() && a.s.id?.toString() === currentId?.toString();
+                    const bCur = b.s.source?.toString() === currentSource?.toString() && b.s.id?.toString() === currentId?.toString();
+                    if (aCur && !bCur) return -1;
+                    if (!aCur && bCur) return 1;
+                    return b.score - a.score;
+                  })
+                  .map(({ s: source, score }, index) => {
+                    const isCurrentSource =
+                      source.source?.toString() === currentSource?.toString() &&
+                      source.id?.toString() === currentId?.toString();
+                    return (
+                      <div
+                        key={`${source.source}-${source.id}`}
+                        onClick={() =>
+                          !isCurrentSource && handleSourceClick(source)
+                        }
+                        className={`flex items-start gap-3 px-2 py-3 rounded-lg transition-all select-none duration-200 relative
                       ${isCurrentSource
                             ? 'bg-green-500/10 dark:bg-green-500/20 border-green-500/30 border'
                             : 'hover:bg-gray-200/50 dark:hover:bg-white/10 hover:scale-[1.02] cursor-pointer'
-                          }`.trim()}>
+                          }`.trim()}
+                      >
                         {/* 封面 */}
                         <div className='flex-shrink-0 w-12 h-20 bg-gray-300 dark:bg-gray-600 rounded overflow-hidden'>
                           {source.episodes && source.episodes.length > 0 && (
@@ -588,7 +589,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                                 {source.title}
                               </h3>
                               {/* 标题级别的 tooltip - 第一个元素不显示 */}
-                              {idx !== 0 && (
+                              {index !== 0 && (
                                 <div className='absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1 bg-gray-800 text-white text-xs rounded-md shadow-lg opacity-0 invisible group-hover/title:opacity-100 group-hover/title:visible transition-all duration-200 ease-out delay-100 whitespace-nowrap z-[500] pointer-events-none'>
                                   {source.title}
                                   <div className='absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-800'></div>

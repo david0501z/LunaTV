@@ -15,7 +15,7 @@ export const runtime = 'nodejs';
  */
 const DRPYS_BASE = process.env.DRPYS_BASE_URL || 'http://172.17.0.1:5757';
 // drpyS 密码优先读取环境变量 DRPYS_PWD，yml 中可单独配置
-const DRPYS_PWD = process.env.DRPYS_PWD || 'admin123';
+const DRPYS_PWD = process.env.DRPYS_PWD || 'user0501';
 
 function log(...args: unknown[]) {
   console.log('[drpys]', ...args);
@@ -191,7 +191,7 @@ export async function GET(request: NextRequest) {
     if (isSearch && data && data.list && Array.isArray(data.list)) {
       for (const item of data.list) {
         if (!item.vod_play_url) {
-          item.vod_play_url = '播放$/api/drpys/play?placeholder=1';
+          item.vod_play_url = '播放$https://0.0.0.0/placeholder.mp4';
         }
         // 将 URL 格式的 vod_id 编码为 base64url, 透传 detail 路由 ID 校验
         if (item.vod_id && typeof item.vod_id === 'string' && (item.vod_id.startsWith('http://') || item.vod_id.startsWith('https://'))) {
