@@ -1652,14 +1652,6 @@ function PlayPageClient() {
           video.disableRemotePlayback = false;
         }
 
-        // 启用浏览器原生投屏/AirPlay
-        const video = artPlayerRef.current?.video;
-        if (video) {
-          video.setAttribute('x-webkit-airplay', 'true');
-          video.setAttribute('webkit-airplay', 'true');
-          video.disableRemotePlayback = false;
-        }
-
         // 播放器就绪后，如果正在播放则请求 Wake Lock
         if (artPlayerRef.current && !artPlayerRef.current.paused) {
           requestWakeLock();
